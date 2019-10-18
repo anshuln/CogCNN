@@ -2,7 +2,7 @@
 import tensorflow as tf
 from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense
+from tensorflow.keras.layers import Flatten,Dense,Reshape
 
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4):
@@ -16,14 +16,16 @@ class MultiTaskModel(Sequential):
 		self.trainableVariables = []	#Not to be confused with trainable_variables, which is read-only
 		for i in range(num_inputs):
 			self.segnets.append(SegNet())
+		print("Image_Shape",image_shape)
 		self.reconstruct_image = Sequential([Flatten(),Dense(1000),
 				Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='relu')])
 		self.predict_label = Sequential([Flatten(),Dense(1000),
-				Dense(num_labels,activation='softmax')])
+				Dense(num_labels,activation='softmax')])	#The loss function uses softmax, final preds as well
 
 	def setTrainableVariables(self):
-		for i in range(num_inputs):	
-			self.trainable_variables += self.segnets[i].trainable_variables()
+		for i in range(self.num_inputs):	
+			print("On segnet",i)
+			self.trainableVariables += self.segnets[i].trainable_variables()
 		self.trainableVariables += self.reconstruct_image.trainable_variables
 		self.trainableVariables += self.predict_label.trainable_variables 
 
@@ -32,20 +34,21 @@ class MultiTaskModel(Sequential):
 		#TODO check if this gives us correct appending upon flatten
 		#TODO refactor to make everything a tensor
 		batch,h,w,c = X[0].shape
+		# print("X.shape",h,w,c)
 		assert len(X) == self.num_inputs
 		result = []
 		encoded_reps,rec = self.segnets[0].call(X[0])
 		encoded_reps = tf.expand_dims(encoded_reps,1)
-		reconstruction = tf.expand_dims(rec,1)
 		result.append(rec)
 		for i in range(self.num_inputs-1):
 			enc,rec = self.segnets[i+1].call(X[i+1])
+			enc = tf.expand_dims(enc,1)
 			encoded_reps = tf.concat([encoded_reps,enc],axis=1)
-			result.append(rec)
-			reconstruction = tf.concat([reconstruction,rec],axis=1)
-
-		result.append(tf.reshape(self.reconstruct_image(reconstruction),(batch,h,w,c)))
-		result.append(self.predict_label(encoded_reps))
+			result.append(rec)	#Appending the reconstructed result to return 
+		print(encoded_reps.shape)
+		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))	#Appending final image
+		result.append(self.predict_label(encoded_reps))		#Appending final labels
+		return result
 
 	def loss_reconstruction(self,X,Y):
 		#Pixel-wise l2 loss
@@ -53,11 +56,12 @@ class MultiTaskModel(Sequential):
 			axis=-1),axis=-1),axis=-1,keepdims=True)	#see if keepdims is required
 
 	def loss_classification(self,X,labels):
-		pass
+		return tf.keras.losses.CategoricalCrossentropy(labels,X)
 
 	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
 		# Y needs to be a list of [img,labels]
 		with tf.GradientTape() as tape:
+			
 			result = self.call(X)
 			loss = self.loss_reconstruction(X[0],result[0])
 			for i in range(self.num_inputs-1):
@@ -68,6 +72,8 @@ class MultiTaskModel(Sequential):
 		grads_and_vars = zip(grads, self.trainableVariables)
 		optimizer.apply_gradients(grads_and_vars)
 		return loss
+
+	# def summary():
 
 	# def fit(self, X,Y, batch_size=32,epochs=1,verbose=1,validation_split=0.0,
 	# validation_data=None,
