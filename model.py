@@ -10,20 +10,20 @@ class MultiTaskModel(Sequential):
 		#image_shape is the shape of 1 image for reconstruction
 		#TODO - kwargs support for segnet initializations
 		super(MultiTaskModel, self).__init__()
-		self.num_inputs = num_inputs	
+		self.num_inputs = num_inputs    
 		self.image_shape = image_shape
 		self.segnets = []
-		self.trainableVariables = []	#Not to be confused with trainable_variables, which is read-only
+		self.trainableVariables = []    #Not to be confused with trainable_variables, which is read-only
 		for i in range(num_inputs):
 			self.segnets.append(SegNet())
 		print("Image_Shape",image_shape)
 		self.reconstruct_image = Sequential([Flatten(),Dense(1000),
 				Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='relu')])
 		self.predict_label = Sequential([Flatten(),Dense(1000),
-				Dense(num_labels,activation='softmax')])	#The loss function uses softmax, final preds as well
+				Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
 
 	def setTrainableVariables(self):
-		for i in range(self.num_inputs):	
+		for i in range(self.num_inputs):    
 			print("On segnet",i)
 			self.trainableVariables += self.segnets[i].trainable_variables()
 		self.trainableVariables += self.reconstruct_image.trainable_variables
@@ -44,19 +44,21 @@ class MultiTaskModel(Sequential):
 			enc,rec = self.segnets[i+1].call(X[i+1])
 			enc = tf.expand_dims(enc,1)
 			encoded_reps = tf.concat([encoded_reps,enc],axis=1)
-			result.append(rec)	#Appending the reconstructed result to return 
-		print(encoded_reps.shape)
-		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))	#Appending final image
-		result.append(self.predict_label(encoded_reps))		#Appending final labels
+			result.append(rec)  #Appending the reconstructed result to return 
+		#print(encoded_reps.shape)
+		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
+		result.append(self.predict_label(encoded_reps))     #Appending final labels
 		return result
 
 	def loss_reconstruction(self,X,Y):
+		# print(X.shape,Y.shape)
 		#Pixel-wise l2 loss
-		return  tf.math.reduce_sum(tf.math.reduce_sum(tf.math.reduce_sum((X-Y)**2,
-			axis=-1),axis=-1),axis=-1,keepdims=True)	#see if keepdims is required
+		# return  tf.math.reduce_sum(tf.math.reduce_sum(tf.math.reduce_sum((X-Y)**2,
+			# axis=-1),axis=-1),axis=-1,keepdims=True)    #see if keepdims is required
+		return tf.math.reduce_sum((X-Y)**2)
 
 	def loss_classification(self,X,labels):
-		return tf.keras.losses.CategoricalCrossentropy(labels,X)
+		return tf.keras.losses.CategoricalCrossentropy()(labels,X)
 
 	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
 		# Y needs to be a list of [img,labels]
@@ -67,8 +69,13 @@ class MultiTaskModel(Sequential):
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 			loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
+			# print("Loss: ",loss)
 			loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+			# print("Loss: ",loss)
 		grads = tape.gradient(loss,self.trainableVariables)
+		# for t in self.trainableVariables:
+			# print(type(t))
+		# print(len(grads),len(self.trainableVariables))
 		grads_and_vars = zip(grads, self.trainableVariables)
 		optimizer.apply_gradients(grads_and_vars)
 		return loss

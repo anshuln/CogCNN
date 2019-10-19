@@ -19,15 +19,15 @@ class SegNet(Sequential):
 			filter = [64, 128, 256, 512, 512]
 
 		self.nettype = nettype
-		self.max_indices = []	#TODO can we refactor to make this a tensor?
+		self.max_indices = []   #TODO can we refactor to make this a tensor?
 
 		# defining the convolution part of encoder-decoder blocks
 		#TODO Refactor for better model making
 		self.conv_block_enc = Sequential([Sequential([self.conv_layer(filter[0]),self.conv_layer(filter[0])])])
 		self.conv_block_dec = Sequential([Sequential([self.conv_layer(filter[-2]),
 												  self.conv_layer(filter[-2]),
-												  self.conv_layer(filter[-3])])])	
-		for i in range(3):	#TODO Refactor for better model making
+												  self.conv_layer(filter[-3])])])   
+		for i in range(3):  #TODO Refactor for better model making
 			if i == 0:
 				self.conv_block_enc.add(Sequential([self.conv_layer(filter[i + 1]),
 													self.conv_layer(filter[i + 1])]))
@@ -41,7 +41,7 @@ class SegNet(Sequential):
 		self.conv_block_dec.add(Sequential([self.conv_layer(filter[-4]),
 												  self.conv_layer(filter[0])]))
 		self.conv_block_dec.add(Sequential([self.conv_layer(filter[0]),
-												  self.conv_layer(filter[channels])]))
+												  self.conv_layer(channels)]))
 
 		#Uncomment for task specific layers  (Won't be using here)  
 		# self.pred_task1 = nn.Sequential(nn.Conv2d(in_channels=filter[0], out_channels=filter[0], kernel_size=3, padding=1),
@@ -63,7 +63,7 @@ class SegNet(Sequential):
 				BatchNormalization(axis=-1),
 				ReLU(),
 				Conv2D(filters=channel, kernel_size=3, padding="valid"),
-				BatchNormalization(axis=-1),	#SANITY CHECK, see that channels are LAST!!!
+				BatchNormalization(axis=-1),    #SANITY CHECK, see that channels are LAST!!!
 				ReLU()]
 			)
 		else:
@@ -77,25 +77,26 @@ class SegNet(Sequential):
 	def call(self,X):
 		# Returns 2 tensors, one is the encoded representation, other 
 		# is the reconstruction
-		for layer in self.conv_block_enc.layers:	
+		for layer in self.conv_block_enc.layers:    
 			X = layer(X)
 			# print(layer.weights)
 			X,ind = self.down_sampling.call(X)
 			self.max_indices.append(ind)
-		X_enc = X 	#POTENTIAL BUG IF SHALLOW COPY
-		self.max_indices = self.max_indices[::-1]	#Reverse list for easier access
+		X_enc = X   #POTENTIAL BUG IF SHALLOW COPY
+		self.max_indices = self.max_indices[::-1]   #Reverse list for easier access
 		#print("INDICES______",self.max_indices)
 		for idx,layer in enumerate(self.conv_block_dec.layers):
 			# print(idx,X.shape,self.max_indices[idx].shape)
 			X = self.up_sampling.call([X,self.max_indices[idx]])
 			# print(idx,X.shape,self.max_indices[idx].shape)
 			X = layer(X)
+		# print("Segnet call shape",X.shape,X_enc.shape)
 		return [X_enc,X]
 
 	def trainable_variables(self):
 		tv = []
 		for layer in self.conv_block_enc.layers:
-			tv.append(layer.trainable_variables)
+			tv+=(layer.trainable_variables)
 		for layer in self.conv_block_dec.layers:
-			tv.append(layer.trainable_variables) 
+			tv+=(layer.trainable_variables) 
 		return tv
