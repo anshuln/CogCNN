@@ -1,5 +1,5 @@
 from  tensorflow.keras import Sequential
-from tensorflow.keras.layers import Conv2D,ReLU,BatchNormalization
+from tensorflow.keras.layers import Conv2D,ReLU,BatchNormalization,Activation
 from layers import *
 # import argparse 
 
@@ -24,10 +24,7 @@ class SegNet(Sequential):
 		# defining the convolution part of encoder-decoder blocks
 		#TODO Refactor for better model making
 		self.conv_block_enc = Sequential([Sequential([self.conv_layer(filter[0]),self.conv_layer(filter[0])])])
-		self.conv_block_dec = Sequential([Sequential([self.conv_layer(filter[-2]),
-												  self.conv_layer(filter[-2]),
-												  self.conv_layer(filter[-3])])])   
-		for i in range(3):  #TODO Refactor for better model making
+		for i in range(4):  #TODO Refactor for better model making
 			if i == 0:
 				self.conv_block_enc.add(Sequential([self.conv_layer(filter[i + 1]),
 													self.conv_layer(filter[i + 1])]))
@@ -35,16 +32,31 @@ class SegNet(Sequential):
 				self.conv_block_enc.add(Sequential([self.conv_layer(filter[i + 1]),
 													self.conv_layer(filter[i + 1]),
 													self.conv_layer(filter[i + 1])]))
-		self.conv_block_dec.add(Sequential([self.conv_layer(filter[-3]),
-												  self.conv_layer(filter[-3]),
-												  self.conv_layer(filter[-4])]))
-		self.conv_block_dec.add(Sequential([self.conv_layer(filter[-4]),
+		self.conv_block_dec = Sequential()
+		for i in range(1,4):
+			self.conv_block_dec.add(Sequential([self.conv_layer(filter[-i]),
+												  self.conv_layer(filter[-i]),
+												  self.conv_layer(filter[-(i+1)])]))
+		# self.conv_block_dec = Sequential([Sequential([self.conv_layer(filter[-1]),
+		# 										  self.conv_layer(filter[-1]),
+		# 										  self.conv_layer(filter[-2])])])   
+		# self.conv_block_dec.add(Sequential([self.conv_layer(filter[-2]),
+		# 										  self.conv_layer(filter[-2]),
+		# 										  self.conv_layer(filter[-3])]))
+		# self.conv_block_dec.add(Sequential([self.conv_layer(filter[-3]),
+		# 										  self.conv_layer(filter[-3]),
+		# 										  self.conv_layer(filter[-4])]))
+		self.conv_block_dec.add(Sequential([self.conv_layer(filter[1]),
 												  self.conv_layer(filter[0])]))
+		
 		self.conv_block_dec.add(Sequential([self.conv_layer(filter[0]),
-												  self.conv_layer(channels)]))
+												  tf.keras.Sequential(
+				[Conv2D(filters=channels, kernel_size=3, padding="same"),
+				BatchNormalization(axis=-1)]
+			)]))
 
 		#Uncomment for task specific layers  (Won't be using here)  
-		# self.pred_task1 = nn.Sequential(nn.Conv2d(in_channels=filter[0], out_channels=filter[0], kernel_size=3, padding=1),
+		# self.pred_task1 = nn.Sequent2ial(nn.Conv2d(in_channels=filter[0], out_channels=filter[0], kernel_size=3, padding=1),
 		#                                 nn.Conv2d(in_channels=filter[0], out_channels=self.class_nb, kernel_size=1, padding=0))
 		# self.pred_task2 = nn.Sequential(nn.Conv2d(in_channels=filter[0], out_channels=filter[0], kernel_size=3, padding=1),
 		#                                 nn.Conv2d(in_channels=filter[0], out_channels=1, kernel_size=1, padding=0))
@@ -74,6 +86,7 @@ class SegNet(Sequential):
 			)
 		return conv_block
 
+	@tf.function
 	def call(self,X):
 		# Returns 2 tensors, one is the encoded representation, other 
 		# is the reconstruction

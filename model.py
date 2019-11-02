@@ -2,8 +2,8 @@
 import tensorflow as tf
 from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense,Reshape
-
+from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout
+import numpy as np
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4):
 		#num_inputs refers to input channels(edge,texture etc.)
@@ -17,18 +17,22 @@ class MultiTaskModel(Sequential):
 		for i in range(num_inputs):
 			self.segnets.append(SegNet())
 		print("Image_Shape",image_shape)
-		self.reconstruct_image = Sequential([Flatten(),Dense(1000),
-				Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='relu')])
-		self.predict_label = Sequential([Flatten(),Dense(1000),
+		self.reconstruct_image = Sequential([Flatten(),Dense(1000),Dropout(0.5),
+				Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
+		self.predict_label = Sequential([Flatten(),Dense(1000),Dropout(0.5),
 				Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
 
-	def setTrainableVariables(self):
+	def setTrainableVariables(self,trainableVariables=None):
+		if trainableVariables is not None:
+			self.trainableVariables = trainableVariables
+			return
 		for i in range(self.num_inputs):    
 			print("On segnet",i)
 			self.trainableVariables += self.segnets[i].trainable_variables()
 		self.trainableVariables += self.reconstruct_image.trainable_variables
 		self.trainableVariables += self.predict_label.trainable_variables 
-
+	
+	@tf.function
 	def call(self,X):
 		#X is a LIST of the dimension [batch*h*w*c]*num_inputs
 		#TODO check if this gives us correct appending upon flatten
@@ -65,12 +69,17 @@ class MultiTaskModel(Sequential):
 		with tf.GradientTape() as tape:
 			
 			result = self.call(X)
+			losses = []
 			loss = self.loss_reconstruction(X[0],result[0])
+			losses.append(loss)
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
+				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
 			loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
 			# print("Loss: ",loss)
+			losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
 			loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+			losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
 			# print("Loss: ",loss)
 		grads = tape.gradient(loss,self.trainableVariables)
 		# for t in self.trainableVariables:
@@ -78,7 +87,24 @@ class MultiTaskModel(Sequential):
 		# print(len(grads),len(self.trainableVariables))
 		grads_and_vars = zip(grads, self.trainableVariables)
 		optimizer.apply_gradients(grads_and_vars)
-		return loss
+		return loss,losses
+
+	def validate_batch(self,X,Y_image,Y_labels):
+		# Returns predictions, losses on batch
+		result = self.call(X)
+		losses = []
+		loss = self.loss_reconstruction(X[0],result[0])
+		losses.append(loss)
+		for i in range(self.num_inputs-1):
+			loss += self.loss_reconstruction(X[i+1],result[i+1])
+			losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
+		loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
+		# print("Loss: ",loss)
+		losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
+		loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+		losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
+		# print(result[-1].shape,Y_labels.shape,tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1))
+		return (tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)).sum(),losses
 
 	# def summary():
 
