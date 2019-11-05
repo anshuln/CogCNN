@@ -11,7 +11,7 @@ from layers import *
 # opt = parser.parse_args()
 
 class SegNet(Sequential):
-	def __init__(self,nettype='standard',channels=3):
+	def __init__(self,nettype='standard',channels=3,edge=False):
 		super(SegNet, self).__init__()
 		if nettype == 'wide':
 			filter = [64, 128, 256, 512, 1024]
@@ -37,23 +37,26 @@ class SegNet(Sequential):
 			self.conv_block_dec.add(Sequential([self.conv_layer(filter[-i]),
 												  self.conv_layer(filter[-i]),
 												  self.conv_layer(filter[-(i+1)])]))
-		# self.conv_block_dec = Sequential([Sequential([self.conv_layer(filter[-1]),
-		# 										  self.conv_layer(filter[-1]),
-		# 										  self.conv_layer(filter[-2])])])   
-		# self.conv_block_dec.add(Sequential([self.conv_layer(filter[-2]),
-		# 										  self.conv_layer(filter[-2]),
-		# 										  self.conv_layer(filter[-3])]))
-		# self.conv_block_dec.add(Sequential([self.conv_layer(filter[-3]),
-		# 										  self.conv_layer(filter[-3]),
-		# 										  self.conv_layer(filter[-4])]))
+
 		self.conv_block_dec.add(Sequential([self.conv_layer(filter[1]),
 												  self.conv_layer(filter[0])]))
-		
-		self.conv_block_dec.add(Sequential([self.conv_layer(filter[0]),
-												  tf.keras.Sequential(
-				[Conv2D(filters=channels, kernel_size=3, padding="same"),
-				BatchNormalization(axis=-1)]
-			)]))
+		if edge == True:
+			self.conv_block_dec.add(Sequential([self.conv_layer(filter[0]),
+													  tf.keras.Sequential(
+					[
+					Conv2D(filters=channels, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation='relu'),
+					BatchNormalization(axis=-1),
+					ReLU()
+					]
+				)]))	#Getting best results when sigmoid, batch_norm, relu
+		else:
+			self.conv_block_dec.add(Sequential([self.conv_layer(filter[0]),
+													  tf.keras.Sequential(
+					[BatchNormalization(axis=-1),
+					Conv2D(filters=channels, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation='sigmoid'),
+					]
+				)]))	#Getting best results when sigmoid, batch_norm, relu
+
 
 		#Uncomment for task specific layers  (Won't be using here)  
 		# self.pred_task1 = nn.Sequent2ial(nn.Conv2d(in_channels=filter[0], out_channels=filter[0], kernel_size=3, padding=1),
@@ -80,7 +83,7 @@ class SegNet(Sequential):
 			)
 		else:
 			conv_block = tf.keras.Sequential(
-				[Conv2D(filters=channel, kernel_size=3, padding="same"),
+				[Conv2D(filters=channel, kernel_size=3, padding="same",kernel_initializer='glorot_normal'),
 				BatchNormalization(axis=-1),
 				ReLU()]
 			)
