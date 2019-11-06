@@ -2,7 +2,7 @@
 import tensorflow as tf
 from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout
+from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization
 import numpy as np
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4):
@@ -19,10 +19,10 @@ class MultiTaskModel(Sequential):
 		self.segnets.append(SegNet(edge=True))
 		self.segnets.append(SegNet(edge=True))
 		print("Image_Shape",image_shape)
-		self.reconstruct_image = Sequential([Flatten(),Dense(1000),Dropout(0.5),
-				Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
-		# self.predict_label = Sequential([Flatten(),Dense(1000),Dropout(0.5),
-		# 		Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
+		self.reconstruct_image = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1)
+				,Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
+		self.predict_label = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1),
+				Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
 
 	def setTrainableVariables(self,trainableVariables=None):
 		if trainableVariables is not None:
@@ -31,8 +31,8 @@ class MultiTaskModel(Sequential):
 		for i in range(self.num_inputs):    
 			print("On segnet",i)
 			self.trainableVariables += self.segnets[i].trainable_variables()
-		# self.trainableVariables += self.reconstruct_image.trainable_variables
-		# self.trainableVariables += self.predict_label.trainable_variables 
+		self.trainableVariables += self.reconstruct_image.trainable_variables
+		self.trainableVariables += self.predict_label.trainable_variables 
 	
 	@tf.function
 	def call(self,X):
@@ -52,8 +52,9 @@ class MultiTaskModel(Sequential):
 			encoded_reps = tf.concat([encoded_reps,enc],axis=1)
 			result.append(rec)  #Appending the reconstructed result to return 
 		#print(encoded_reps.shape)
+		# print("Call_shape",encoded_reps.shape)
 		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
-		# result.append(self.predict_label(encoded_reps))     #Appending final labels
+		result.append(self.predict_label(encoded_reps))     #Appending final labels
 		return result
 
 	def loss_reconstruction(self,X,Y):
@@ -79,11 +80,11 @@ class MultiTaskModel(Sequential):
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
-			# loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
+			loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
 			# print("Loss: ",loss)
-			# losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
-			# loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
-			# losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
+			losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
+			loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+			losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
 			# print("Loss: ",loss)
 		grads = tape.gradient(loss,self.trainableVariables)
 		# print(grads)
@@ -92,7 +93,7 @@ class MultiTaskModel(Sequential):
 		# print(len(grads),len(self.trainableVariables))
 		grads_and_vars = zip(grads, self.trainableVariables)
 		optimizer.apply_gradients(grads_and_vars)
-		# print([np.max(x.numpy()) for x in grads[:104]])
+		# print([np.max(x.numpy()) for x in grads[104:208]])
 		# print("WhileTrain",len(losses))
 		return loss,losses
 
@@ -108,11 +109,11 @@ class MultiTaskModel(Sequential):
 		loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
 		# print("Loss: ",loss)
 		losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
-		# loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
-		# losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
+		loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+		losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
 		# print(result[-1].shape,Y_labels.shape,tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1))
-		# return (tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)).sum(),losses
-		return losses
+		return (tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)).sum(),losses
+		# return losses
 		
 	def getWeightNorms(self):
 		#Returns ||W|| for each encoded rep
@@ -123,8 +124,8 @@ class MultiTaskModel(Sequential):
 		norms_pred = []
 		min_shape = weight_rec.shape[0]//self.num_inputs
 		for i in range(self.num_inputs):
-			#w = weight_pred[i*min_shape:(i+1)*min_shape,:].numpy()
-			#norms_pred.append(np.sum(w**2))
+			w = weight_pred[i*min_shape:(i+1)*min_shape,:].numpy()
+			norms_pred.append(np.sum(w**2))
 			w = weight_rec[i*min_shape:(i+1)*min_shape,:].numpy()
 			norms_rec.append(np.sum(w**2))
 		return norms_rec,norms_pred

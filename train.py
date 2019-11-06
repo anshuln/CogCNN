@@ -10,7 +10,7 @@ import os
 from matplotlib import pyplot as plt
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 for d in physical_devices:
     tf.config.experimental.set_memory_growth(d, True)
@@ -21,7 +21,7 @@ label_dir = 'label/labels'
 log_file = 'log.txt'
 
 num_inputs = 4
-image_shape = (128,128,3)
+image_shape = (64,64,3)
 num_labels = 31
 
 
@@ -82,7 +82,7 @@ def train(model,optimizer,epochs):  #TODO add validation, generator for datasets
         print(norms)
         log.write("Norm_rec - {}, Norm_pred - {}".format(norms[1],norms[0]))
         log.write("\n")
-        print("Val-loss {}".format(np.array(vloss).mean(axis=0)[-1]))
+        print("Val-loss {}",.format(np.array(vloss).mean(axis=0)[-1]))
         # if epoch % 5 == 0:
         #     pickle.dump(model.trainableVariables,open("trained_models/model_{}.pkl".format(epoch),"wb"))
 
