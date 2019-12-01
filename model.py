@@ -17,10 +17,8 @@ class MultiTaskModel(Sequential):
 			self.trainableVariables = []    #Not to be confused with trainable_variables, which is read-only
 		else:
 			self.trainableVariables = trainableVariables
-		for i in range(num_inputs-2):
+		for i in range(num_inputs):
 			self.segnets.append(SegNet())
-		self.segnets.append(SegNet())
-		self.segnets.append(SegNet())
 		print("Image_Shape",image_shape)
 		self.reconstruct_image = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1)
 				,Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
@@ -63,15 +61,15 @@ class MultiTaskModel(Sequential):
 		result.append(self.predict_label(encoded_reps))     #Appending final labels
 		return result
 
-	def loss_reconstruction(self,X,Y):
+	def loss_reconstruction(self,X,Y,beta=0.0):
 		# print(X.shape,Y.shape)
 		#Pixel-wise l2 loss
 		# return  tf.math.reduce_sum(tf.math.reduce_sum(tf.math.reduce_sum((X-Y)**2,
 			# axis=-1),axis=-1),axis=-1,keepdims=True)    #see if keepdims is required
-		return tf.math.reduce_sum((X-Y)**2)/(X.shape[1]*X.shape[2]*X.shape[3])
+		return (1-beta)*tf.math.reduce_sum((X-Y)**2)/(X.shape[1]*X.shape[2]*X.shape[3]) + beta*tf.math.reduce_sum(tf.math.abs(X-Y))/(X.shape[1]*X.shape[2]*X.shape[3])
 
-	def loss_classification(self,X,labels):
-		return tf.keras.losses.CategoricalCrossentropy()(labels,X)
+    def loss_classification(self,X,labels):
+        return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
 	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
 		# Y needs to be a list of [img,labels]
@@ -145,11 +143,11 @@ class MultiTaskModel(Sequential):
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
 		pred_train_vars = pickle.load(open("{}/{}-enc".format(modelDir,fileName),"rb"))
 		for l in self.reconstruct_image.layers:
-		    # weights = l.get_weights()
-		    weights = rec_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = rec_train_vars
+			l.set_weights(weights)
 		for l in self.predict_label.layers:
-		    # weights = l.get_weights()
-		    weights = pred_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = pred_train_vars
+			l.set_weights(weights)
 		self.TrainableVarsSet = False

@@ -1,7 +1,8 @@
-#TODO Rename file
+# This model does MTL in 2 stages, 
+# First only the reconstruction tasks are trained
+# Then encoder weights are fixed and classifier is trained 
 import tensorflow as tf
 from multitask_segnet_tf2 import *
-from layers import *
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization
 import numpy as np
@@ -14,16 +15,12 @@ class MultiTaskModel(Sequential):
 		self.num_inputs = num_inputs    
 		self.image_shape = image_shape
 		self.segnets = []
-		self.attention_gates_rec = []
-		self.attention_gates_pred = []
 		if trainableVariables is None:
 			self.trainableVariables = []    #Not to be confused with trainable_variables, which is read-only
 		else:
 			self.trainableVariables = trainableVariables
 		for i in range(num_inputs):
 			self.segnets.append(SegNet())
-			self.attention_gates_rec.append(SelfAttention())
-			self.attention_gates_pred.append(SelfAttention())
 		print("Image_Shape",image_shape)
 		self.reconstruct_image = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1)
 				,Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
@@ -38,15 +35,12 @@ class MultiTaskModel(Sequential):
 		for i in range(self.num_inputs):    
 			print("On segnet",i)
 			self.trainableVariables += self.segnets[i].trainable_variables
-		for i in range(self.num_inputs):    
-			self.trainableVariables += self.attention_gates_rec[i].trainable_variables
-
 		self.trainableVariables += self.reconstruct_image.trainable_variables
 		#Uncomment the two lines below to enable classification
 		self.trainableVariables += self.predict_label.trainable_variables 
 	
 	@tf.function
-	def call(self,X):
+	def call(self,X,classification=False):
 		#X is a LIST of the dimension [batch*h*w*c]*num_inputs
 		#TODO check if this gives us correct appending upon flatten
 		#TODO refactor to make everything a tensor
@@ -55,25 +49,20 @@ class MultiTaskModel(Sequential):
 		assert len(X) == self.num_inputs
 		result = []
 		encoded_reps,rec = self.segnets[0].call(X[0])
-		encoded_reps_rec = self.attention_gates_rec[0].call(encoded_reps)
-		encoded_reps_rec = tf.expand_dims(encoded_reps_rec,1)
-		encoded_reps_pred = self.attention_gates_pred[0].call(encoded_reps)
-		encoded_reps_pred = tf.expand_dims(encoded_reps_pred,1)
-		result.append(rec)
+		encoded_reps = tf.expand_dims(encoded_reps,1)
+		if classification == False:
+			result.append(rec)
 		for i in range(self.num_inputs-1):
 			enc,rec = self.segnets[i+1].call(X[i+1])
-			enc_attended_rec = self.attention_gates_rec[i+1].call(enc)
-			enc = tf.expand_dims(enc_attended_rec,1)
-			encoded_reps_rec = tf.concat([encoded_reps_rec,enc],axis=1)
-			enc_attended_pred = self.attention_gates_pred[i+1].call(enc)
-			enc = tf.expand_dims(enc_attended_pred,1)
-			encoded_reps_rec = tf.concat([encoded_reps_pred,enc],axis=1)
-			result.append(rec)  #Appending the reconstructed result to return 
-		#print(encoded_reps.shape)
-		# print("Call_shape",encoded_reps.shape)
-		result.append(tf.reshape(self.reconstruct_image(encoded_reps_rec),(batch,h,w,c)))   #Appending final image
+			enc = tf.expand_dims(enc,1)
+			encoded_reps = tf.concat([encoded_reps,enc],axis=1)
+			if classification == False:
+				result.append(rec)  #Appending the reconstructed result to return 
+		if classification == False:
+			result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
 		#Uncomment the two lines below to enable classification
-		result.append(self.predict_label(encoded_reps_pred))     #Appending final labels
+		else:
+			result.append(self.predict_label(encoded_reps))     #Appending final labels
 		return result
 
 	def loss_reconstruction(self,X,Y,beta=0.0):
@@ -86,29 +75,36 @@ class MultiTaskModel(Sequential):
     def loss_classification(self,X,labels):
         return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
-	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
-		# Y needs to be a list of [img,labels]
+	def train_on_batch(self,X,labels,optimizer,classification=False):
+		# If classification is True, labels is a one-hot of the class
+		# Else it is the target image
 		with tf.GradientTape() as tape:
 			
-			result = self.call(X)
+			result = self.call(X,classification)
 			losses = []
 			loss = 0
-
-			loss = self.loss_reconstruction(X[0],result[0])
-			losses.append(loss)
+			if classification == False:
+				loss = self.loss_reconstruction(X[0],result[0])
+				losses.append(loss)
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
-			loss += self.loss_reconstruction(result[self.num_inputs],Y_image)
-			losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
-			#Uncomment the two lines below to enable classification
-			loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
-			losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
-		grads = tape.gradient(loss,self.trainableVariables)
-		grads_and_vars = zip(grads, self.trainableVariables)
+			loss += self.loss_reconstruction(result[self.num_inputs],labels)
+			losses.append(self.loss_reconstruction(result[self.num_inputs],labels))
+
+			else:
+				loss += self.loss_classification(result[-1],labels)
+				losses.append(self.loss_classification(result[-1],labels))
+
+		if classification == False:
+			grads = tape.gradient(loss,self.trainableVariables)
+			grads_and_vars = zip(grads, self.trainableVariables)
+		else:
+			grads = tape.gradient(loss,self.predict_label.trainable_variables)
+			grads_and_vars = zip(grads, self.predict_label.trainable_variables)
+
 		optimizer.apply_gradients(grads_and_vars)
-		# print([np.max(x.numpy()) for x in grads[104:208]])
-		# print("WhileTrain",len(losses))
+
 		return loss,losses
 
 	def validate_batch(self,X,Y_image,Y_labels):
@@ -129,31 +125,20 @@ class MultiTaskModel(Sequential):
 		return (tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)).sum(),losses
 		# return losses
 		
-	def getAttentionMap(self,X):
-		# Saves attention map for X
-		attention_maps_rec = []
-		attention_maps_pred = []
-		batch,h,w,c = X[0].shape
-		# print("X.shape",h,w,c)
-		assert len(X) == self.num_inputs
-		result = []
-		encoded_reps,rec = self.segnets[0].call(X[0])
-		attention = self.attention_gates_rec[0].get_attention_map(encoded_reps).numpy()
-		attention_maps_rec.append(attention)
-		for i in range(self.num_inputs-1):
-			enc,rec = self.segnets[i+1].call(X[i+1])
-			attention = self.attention_gates_rec[i+1].get_attention_map(encoded_reps).numpy()
-			attention_maps_rec.append(attention)  #Appending the reconstructed result to return 
-
-		encoded_reps,rec = self.segnets[0].call(X[0])
-		attention = self.attention_gates_pred[0].get_attention_map(encoded_reps).numpy()
-		attention_maps_pred.append(attention)
-		for i in range(self.num_inputs-1):
-			enc,rec = self.segnets[i+1].call(X[i+1])
-			attention = self.attention_gates_rped[i+1].get_attention_map(encoded_reps).numpy()
-			attention_maps_pred.append(attention)  #Appending the reconstructed result to return 
-
-		return np.array(attention_maps_rec),np.array(attention_maps_pred)
+	def getWeightNorms(self):
+		#Returns ||W|| for each encoded rep
+		weight_rec = self.reconstruct_image.layers[1].trainable_variables[0]
+		# print("Norms",weight_rec.shape)
+		weight_pred = self.predict_label.layers[1].trainable_variables[0]
+		norms_rec = []
+		norms_pred = []
+		min_shape = weight_rec.shape[0]//self.num_inputs
+		for i in range(self.num_inputs):
+			w = weight_pred[i*min_shape:(i+1)*min_shape,:].numpy()
+			norms_pred.append(np.sum(w**2))
+			w = weight_rec[i*min_shape:(i+1)*min_shape,:].numpy()
+			norms_rec.append(np.sum(w**2))
+		return norms_rec,norms_pred
 
 	def save(self,modelDir):
 		for i in range(self.segnets):
@@ -169,11 +154,11 @@ class MultiTaskModel(Sequential):
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
 		pred_train_vars = pickle.load(open("{}/{}-enc".format(modelDir,fileName),"rb"))
 		for l in self.reconstruct_image.layers:
-		    # weights = l.get_weights()
-		    weights = rec_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = rec_train_vars
+			l.set_weights(weights)
 		for l in self.predict_label.layers:
-		    # weights = l.get_weights()
-		    weights = pred_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = pred_train_vars
+			l.set_weights(weights)
 		self.TrainableVarsSet = False

@@ -93,3 +93,19 @@ class MaxUnpool2D(Layer):
 				mask_shape[2]*self.size[1],
 				mask_shape[3]
 				)
+
+
+class SelfAttention(Layer):
+	'''
+	The self attention layer here is mainly for regularization
+	'''
+	def __init__(self,layers):
+		super(SelfAttention, self).__init__(autocast=False)
+		self.model = tf.keras.Sequential(layers)
+
+	def call(self,X):
+		attention_map = self.model(X)
+		return X*attention_map
+
+	def get_attention_map(self,X):
+		return self.model(X)
