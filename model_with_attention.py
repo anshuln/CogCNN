@@ -2,7 +2,7 @@
 import tensorflow as tf
 from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization
+from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization, Conv2D
 import numpy as np
 class MultiTaskModel(Sequential):
     def __init__(self,image_shape,num_labels,num_inputs=4,trainableVariables=None):
@@ -22,6 +22,7 @@ class MultiTaskModel(Sequential):
         self.segnets.append(SegNet(edge=True))
         self.segnets.append(SegNet(edge=True))
         print("Image_Shape",image_shape)
+        self.attention_weights = Sequential([Conv2D(num_filters=512,padding='same')])   #Parameterizing attention as a conv layer
         self.reconstruct_image = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1)
                 ,Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
         #Uncomment the two lines below to enable classification
@@ -34,7 +35,7 @@ class MultiTaskModel(Sequential):
             return
         for i in range(self.num_inputs):    
             print("On segnet",i)
-            self.trainableVariables += self.segnets[i].trainable_variables
+            self.trainableVariables += self.segnets[i].trainable_variables()
         self.trainableVariables += self.reconstruct_image.trainable_variables
         #Uncomment the two lines below to enable classification
         self.trainableVariables += self.predict_label.trainable_variables 
@@ -267,12 +268,4 @@ class MultiTaskModel(Sequential):
     #     except:
     #         pass
     #     return all_losses
-
-
-
-
-
-
-
-
 

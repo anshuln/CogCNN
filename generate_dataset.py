@@ -16,7 +16,7 @@ def one_hot(label_index,len_labels):
     one_hot = [0]*len_labels
     one_hot[label_index] = 1
     return one_hot
-def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/images','greyscale','edges'],test_file_dir='images'):
+def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/images','edges','greyscale'],test_file_dir='images'):
     base_dir = train_file_dir_list[0]
     labels = get_labels(test_file_dir) 
     idx_img = 0
@@ -25,6 +25,7 @@ def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/
     labels_batch = []
     labels_images_batch = []
     batch_size = 16
+    img_size = (64,64)
     image_paths = []
     for l in labels:
         dir = "{}/{}".format(base_dir,l)
@@ -36,15 +37,17 @@ def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/
     for path in image_paths:
         for dir_idx in range(len(train_file_dir_list)):
             dire = train_file_dir_list[dir_idx]
-            img_batch[dir_idx].append(cv2.resize((cv2.imread("{}/{}".format(dire,path))/255.0),(64,64)))
+            img_batch[dir_idx].append(cv2.resize((cv2.imread("{}/{}".format(dire,path))/255.0),img_size))
             #print(len(img_batch),len(img_batch[0]),len(img_batch[1]))
             #print(dir_idx,"{}/{}".format(dire,path))
-        labels_images_batch.append(cv2.resize((cv2.imread("{}/{}".format(test_file_dir,path))/255.0),(64,64)))
+        labels_images_batch.append(cv2.resize((cv2.imread("{}/{}".format(test_file_dir,path))/255.0),img_size))
         labels_batch.append(one_hot(labels.index(path.split('/')[0]),len(labels)))
         idx_img+=1
         if ((idx_img + 1) % batch_size == 0):# or idx_img == len(images) - 1:
             #TODO save h5 files
-            if idx_h5 < 15:
+            # if idx_h5 > 45:
+            #   return
+            if idx_h5 < 10:
                 filename_h5_data = 'data/' + '%dv.npy' % (idx_h5)
                 filename_h5_label = 'label/labels/' + '%dv.npy' % (idx_h5)
                 filename_h5_label_images = 'label/images/' + '%dv.npy' % (idx_h5)
@@ -95,3 +98,4 @@ def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/
 
 
 generate_npy_files()
+
