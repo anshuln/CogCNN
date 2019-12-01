@@ -1,11 +1,45 @@
-# This model does MTL in 2 stages, 
-# First only the reconstruction tasks are trained
-# Then encoder weights are fixed and classifier is trained 
+#TODO Rename file
 import tensorflow as tf
 from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization
+from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization,Conv2D,ZeroPadding2D,LeakyReLU
 import numpy as np
+class PatchGanDiscriminator(tf.keras.Model):
+	def downsample(filters, size, apply_batchnorm=True):
+		initializer = tf.random_normal_initializer(0., 0.02)
+
+		result = tf.keras.Sequential()
+		result.add(
+		  tf.keras.layers.Conv2D(filters, size, strides=2, padding='same',
+		                         kernel_initializer=initializer, use_bias=False))
+
+		if apply_batchnorm:
+		result.add(tf.keras.layers.BatchNormalization())
+
+		result.add(tf.keras.layers.LeakyReLU())
+
+		return result
+	def __init__(self):
+		super(PatchGanDiscriminator, self).__init__()
+		# self.down1 = self.downsample(64, 4, False) # (bs, 128, 128, 64)
+		# self.down2 = self.downsample(128, 4) # (bs, 64, 64, 128)
+		self.down = self.downsample(256, 4) # (bs, 32, 32, 256)
+		self.conv1 = Conv2D(512, 4, strides=1,
+                                use_bias=False)
+		self.conv2 = Conv2D(1, 4, strides=1,
+                                use_bias=False)
+
+	def call(self,X_inp,X_gen):
+		X = tf.concat([X_inp,X_gen],axis=-1)
+		X = self.down.call(X)
+		X = ZeroPadding2D()(X)
+		X = self.conv1.call(X)
+		X = BatchNormalization()(X)
+		X = LeakyReLU()(X)
+		X = ZeroPadding2D()(X)
+		X = self.conv2.call(X)
+		return X
+
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4,trainableVariables=None):
 		#num_inputs refers to input channels(edge,texture etc.)
@@ -27,6 +61,7 @@ class MultiTaskModel(Sequential):
 		#Uncomment the two lines below to enable classification
 		self.predict_label = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1),
 				Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
+		self.discriminator = Sequential([])
 
 	def setTrainableVariables(self,trainableVariables=None):
 		if trainableVariables is not None:
@@ -40,7 +75,7 @@ class MultiTaskModel(Sequential):
 		self.trainableVariables += self.predict_label.trainable_variables 
 	
 	@tf.function
-	def call(self,X,classification=False):
+	def call(self,X):
 		#X is a LIST of the dimension [batch*h*w*c]*num_inputs
 		#TODO check if this gives us correct appending upon flatten
 		#TODO refactor to make everything a tensor
@@ -50,19 +85,18 @@ class MultiTaskModel(Sequential):
 		result = []
 		encoded_reps,rec = self.segnets[0].call(X[0])
 		encoded_reps = tf.expand_dims(encoded_reps,1)
-		if classification == False:
-			result.append(rec)
+		result.append(rec)
 		for i in range(self.num_inputs-1):
 			enc,rec = self.segnets[i+1].call(X[i+1])
 			enc = tf.expand_dims(enc,1)
 			encoded_reps = tf.concat([encoded_reps,enc],axis=1)
-			if classification == False:
-				result.append(rec)  #Appending the reconstructed result to return 
-		if classification == False:
-			result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
+			result.append(rec)  #Appending the reconstructed result to return 
+		#print(encoded_reps.shape)
+		# print("Call_shape",encoded_reps.shape)
+		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
 		#Uncomment the two lines below to enable classification
-		else:
-			result.append(self.predict_label(encoded_reps))     #Appending final labels
+		result.append(self.predict_label(encoded_reps))     #Appending final labels
+		results.append(encoded_reps)	#Needed for pix2pix
 		return result
 
 	def loss_reconstruction(self,X,Y,beta=0.0):
@@ -75,36 +109,59 @@ class MultiTaskModel(Sequential):
     def loss_classification(self,X,labels):
         return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
-	def train_on_batch(self,X,labels,optimizer,classification=False):
-		# If classification is True, labels is a one-hot of the class
-		# Else it is the target image
-		with tf.GradientTape() as tape:
+    def generator_loss(self,disc_generated_output, gen_output, target):
+		gan_loss = self.loss_classification(tf.ones_like(disc_generated_output), disc_generated_output)
+
+		# mean absolute error
+		l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+
+		total_gen_loss = gan_loss + (LAMBDA * l1_loss)
+
+		return total_gen_loss, gan_loss, l1_loss
+    def discriminator_loss(disc_real_output, disc_generated_output):
+		real_loss = self.loss_classification(tf.ones_like(disc_real_output), disc_real_output)
+
+		generated_loss = self.loss_classification(tf.zeros_like(disc_generated_output), disc_generated_output)
+
+		total_disc_loss = real_loss + generated_loss
+
+		return total_disc_loss
+
+
+
+	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
+		# Y needs to be a list of [img,labels]
+		with tf.GradientTape(persistent=True) as tape:
 			
-			result = self.call(X,classification)
+			result = self.call(X)
 			losses = []
 			loss = 0
-			if classification == False:
-				loss = self.loss_reconstruction(X[0],result[0])
-				losses.append(loss)
+			loss_disc = 0
+
+			loss = self.loss_reconstruction(X[0],result[0])
+			losses.append(loss)
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
-			loss += self.loss_reconstruction(result[self.num_inputs],labels)
-			losses.append(self.loss_reconstruction(result[self.num_inputs],labels))
+			disc_real_output = self.discriminator(result[-1],Y_image, training=True)
+			disc_generated_output = self.discriminator(result[-1],result[self.num_inputs], training=True)
+			loss += self.generator_loss(disc_generated_output,result[self.num_inputs],Y_image)
+			# losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
+			#Uncomment the two lines below to enable classification
+			loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
+			losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
 
-			else:
-				loss += self.loss_classification(result[-1],labels)
-				losses.append(self.loss_classification(result[-1],labels))
+			loss_disc += self.discriminator_loss(disc_real_output,disc_generated_output)
+		grads = tape.gradient(loss,self.trainableVariables)
+		grads_and_vars = zip(grads, self.trainableVariables)
 
-		if classification == False:
-			grads = tape.gradient(loss,self.trainableVariables)
-			grads_and_vars = zip(grads, self.trainableVariables)
-		else:
-			grads = tape.gradient(loss,self.predict_label.trainable_variables)
-			grads_and_vars = zip(grads, self.predict_label.trainable_variables)
+		grad_disc = tape.gradient(loss_disc,self.discriminator.trainable_variables)
+		grads_and_vars_disc = zip(grads_disc, self.discriminator.trainable_variables)
 
 		optimizer.apply_gradients(grads_and_vars)
+		optimizer.apply_gradients(grads_and_vars_disc)
 
+		del tape
 		return loss,losses
 
 	def validate_batch(self,X,Y_image,Y_labels):
@@ -147,13 +204,15 @@ class MultiTaskModel(Sequential):
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))
 		pickle.dump(self.predict_label.get_weights(),
 			open("{}/Prediction-Model".format(modelDir),"wb"))
-
+		pickle.dump(self.discriminator.get_weights(),
+			open("{}/Discriminator".format(modelDir),"wb"))
 
 	def load_model(self,modelDir):
 		for i in range(self.segnets):
 			self.segnets[i].load_model("{}/Segnet-{}".format(modelDir,i))
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
 		pred_train_vars = pickle.load(open("{}/Prediction-Model".format(modelDir),"rb"))
+		disc_train_vars = pickle.load(open("{}/Discriminator".format(modelDir),"rb"))
 		for l in self.reconstruct_image.layers:
 			# weights = l.get_weights()
 			weights = rec_train_vars
@@ -161,5 +220,9 @@ class MultiTaskModel(Sequential):
 		for l in self.predict_label.layers:
 			# weights = l.get_weights()
 			weights = pred_train_vars
+			l.set_weights(weights)
+		for l in self.discriminator.layers:
+			# weights = l.get_weights()
+			weights = disc_train_vars
 			l.set_weights(weights)
 		self.TrainableVarsSet = False

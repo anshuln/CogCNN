@@ -161,19 +161,20 @@ class MultiTaskModel(Sequential):
 		pickle.dump(self.reconstruct_image.get_weights(),
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))
 		pickle.dump(self.predict_label.get_weights(),
-			open("{}/{}-enc".format(modelDir,fileName),"wb"))
+			open("{}/Prediction-Model".format(modelDir),"wb"))
+
 
 	def load_model(self,modelDir):
 		for i in range(self.segnets):
 			self.segnets[i].load_model("{}/Segnet-{}".format(modelDir,i))
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
-		pred_train_vars = pickle.load(open("{}/{}-enc".format(modelDir,fileName),"rb"))
+		pred_train_vars = pickle.load(open("{}/Prediction-Model".format(modelDir),"rb"))
 		for l in self.reconstruct_image.layers:
-		    # weights = l.get_weights()
-		    weights = rec_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = rec_train_vars
+			l.set_weights(weights)
 		for l in self.predict_label.layers:
-		    # weights = l.get_weights()
-		    weights = pred_train_vars
-		    l.set_weights(weights)
+			# weights = l.get_weights()
+			weights = pred_train_vars
+			l.set_weights(weights)
 		self.TrainableVarsSet = False
