@@ -68,8 +68,8 @@ class MultiTaskModel(Sequential):
 			# axis=-1),axis=-1),axis=-1,keepdims=True)    #see if keepdims is required
 		return (1-beta)*tf.math.reduce_sum((X-Y)**2)/(X.shape[1]*X.shape[2]*X.shape[3]) + beta*tf.math.reduce_sum(tf.math.abs(X-Y))/(X.shape[1]*X.shape[2]*X.shape[3])
 
-    def loss_classification(self,X,labels):
-        return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
+	def loss_classification(self,X,labels):
+		return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
 	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
 		# Y needs to be a list of [img,labels]

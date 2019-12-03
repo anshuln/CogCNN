@@ -3,7 +3,7 @@ import tensorflow as tf
 from multitask_segnet_tf2 import *
 from layers import *
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization
+from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization,Conv2D
 import numpy as np
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4,trainableVariables=None):
@@ -21,9 +21,10 @@ class MultiTaskModel(Sequential):
 		else:
 			self.trainableVariables = trainableVariables
 		for i in range(num_inputs):
+			#TODO make better attention layers.
 			self.segnets.append(SegNet())
-			self.attention_gates_rec.append(SelfAttention())
-			self.attention_gates_pred.append(SelfAttention())
+			self.attention_gates_rec.append(SelfAttention([Conv2D(filters=128, kernel_size=3, padding="same",kernel_initializer='glorot_normal'),Conv2D(filters=512, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation="sigmoid")]))
+			self.attention_gates_pred.append(SelfAttention([Conv2D(filters=128, kernel_size=3, padding="same",kernel_initializer='glorot_normal'),Conv2D(filters=512, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation="sigmoid")]))
 		print("Image_Shape",image_shape)
 		self.reconstruct_image = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1)
 				,Dense(image_shape[0]*image_shape[1]*image_shape[2],activation='sigmoid')])
@@ -62,12 +63,13 @@ class MultiTaskModel(Sequential):
 		result.append(rec)
 		for i in range(self.num_inputs-1):
 			enc,rec = self.segnets[i+1].call(X[i+1])
+			#print("enc shape",enc.shape,"Xshape",X[i+1].shape)
 			enc_attended_rec = self.attention_gates_rec[i+1].call(enc)
-			enc = tf.expand_dims(enc_attended_rec,1)
-			encoded_reps_rec = tf.concat([encoded_reps_rec,enc],axis=1)
+			enc_attended_rec = tf.expand_dims(enc_attended_rec,1)
+			encoded_reps_rec = tf.concat([encoded_reps_rec,enc_attended_rec],axis=1)
 			enc_attended_pred = self.attention_gates_pred[i+1].call(enc)
-			enc = tf.expand_dims(enc_attended_pred,1)
-			encoded_reps_rec = tf.concat([encoded_reps_pred,enc],axis=1)
+			enc_attended_pred = tf.expand_dims(enc_attended_pred,1)
+			encoded_reps_pred = tf.concat([encoded_reps_pred,enc_attended_pred],axis=1)
 			result.append(rec)  #Appending the reconstructed result to return 
 		#print(encoded_reps.shape)
 		# print("Call_shape",encoded_reps.shape)
@@ -83,8 +85,8 @@ class MultiTaskModel(Sequential):
 			# axis=-1),axis=-1),axis=-1,keepdims=True)    #see if keepdims is required
 		return (1-beta)*tf.math.reduce_sum((X-Y)**2)/(X.shape[1]*X.shape[2]*X.shape[3]) + beta*tf.math.reduce_sum(tf.math.abs(X-Y))/(X.shape[1]*X.shape[2]*X.shape[3])
 
-    def loss_classification(self,X,labels):
-        return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
+	def loss_classification(self,X,labels):
+		return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
 	def train_on_batch(self,X,Y_image,Y_labels,optimizer):
 		# Y needs to be a list of [img,labels]

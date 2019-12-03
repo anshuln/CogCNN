@@ -12,7 +12,7 @@ from layers import *
 
 class blocks(tf.keras.Sequential):
 	def __init__(self):
-		super(segnet,self).__init__()
+		super(blocks,self).__init__()
 	def conv_layer(self, channel):
 		conv_block = tf.keras.Sequential(
 			[Conv2D(filters=channel, kernel_size=3, padding="same",kernel_initializer='glorot_normal'),
@@ -66,7 +66,7 @@ class decoder(blocks):
 		self.conv_block_dec.append(Sequential([self.conv_layer(filter[0]),
 												  tf.keras.Sequential(
 			[BatchNormalization(axis=-1),
-			Conv2D(filters=1, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation="sigmoid"),]
+			Conv2D(filters=channels, kernel_size=3, padding="same",kernel_initializer='glorot_normal',activation="sigmoid"),]
 		)]))    #Getting best results when sigmoid, batch_norm, relu
 		
 		self.up_sampling = MaxUnpool2D(ksize=(2,2))
@@ -85,7 +85,7 @@ class SegNet(tf.keras.Sequential):
 	def __init__(self):
 #       encoder is a model of type encoder defined above,
 #       decoders is a list of decoders 
-		super(Model,self).__init__()
+		super(SegNet,self).__init__()
 		self.encoder = encoder()
 		self.decoder = decoder()
 		self.TrainableVarsSet = False

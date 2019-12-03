@@ -9,12 +9,11 @@ class PatchGanDiscriminator(tf.keras.Model):
 		initializer = tf.random_normal_initializer(0., 0.02)
 
 		result = tf.keras.Sequential()
-		result.add(
-		  tf.keras.layers.Conv2D(filters, size, strides=2, padding='same',
+		result.add(Conv2D(filters, size, strides=2, padding='same',
 		                         kernel_initializer=initializer, use_bias=False))
 
 		if apply_batchnorm:
-		result.add(tf.keras.layers.BatchNormalization())
+			result.add(tf.keras.layers.BatchNormalization())
 
 		result.add(tf.keras.layers.LeakyReLU())
 
@@ -96,7 +95,7 @@ class MultiTaskModel(Sequential):
 		result.append(tf.reshape(self.reconstruct_image(encoded_reps),(batch,h,w,c)))   #Appending final image
 		#Uncomment the two lines below to enable classification
 		result.append(self.predict_label(encoded_reps))     #Appending final labels
-		results.append(encoded_reps)	#Needed for pix2pix
+		result.append(encoded_reps)	#Needed for pix2pix
 		return result
 
 	def loss_reconstruction(self,X,Y,beta=0.0):
@@ -106,10 +105,10 @@ class MultiTaskModel(Sequential):
 			# axis=-1),axis=-1),axis=-1,keepdims=True)    #see if keepdims is required
 		return (1-beta)*tf.math.reduce_sum((X-Y)**2)/(X.shape[1]*X.shape[2]*X.shape[3]) + beta*tf.math.reduce_sum(tf.math.abs(X-Y))/(X.shape[1]*X.shape[2]*X.shape[3])
 
-    def loss_classification(self,X,labels):
-        return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
+	def loss_classification(self,X,labels):
+		return (-1*tf.reduce_mean(labels*(tf.math.log(X+1e-5)) + (1-labels)*(tf.math.log(1-X+1e-5))))
 
-    def generator_loss(self,disc_generated_output, gen_output, target):
+	def generator_loss(self,disc_generated_output, gen_output, target,LAMBDA=0.1):
 		gan_loss = self.loss_classification(tf.ones_like(disc_generated_output), disc_generated_output)
 
 		# mean absolute error
@@ -118,7 +117,7 @@ class MultiTaskModel(Sequential):
 		total_gen_loss = gan_loss + (LAMBDA * l1_loss)
 
 		return total_gen_loss, gan_loss, l1_loss
-    def discriminator_loss(disc_real_output, disc_generated_output):
+	def discriminator_loss(self,disc_real_output, disc_generated_output):
 		real_loss = self.loss_classification(tf.ones_like(disc_real_output), disc_real_output)
 
 		generated_loss = self.loss_classification(tf.zeros_like(disc_generated_output), disc_generated_output)
@@ -143,8 +142,8 @@ class MultiTaskModel(Sequential):
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
-			disc_real_output = self.discriminator(result[-1],Y_image, training=True)
-			disc_generated_output = self.discriminator(result[-1],result[self.num_inputs], training=True)
+			disc_real_output = self.discriminator(result[-1],Y_image)
+			disc_generated_output = self.discriminator(result[-1],result[self.num_inputs])
 			loss += self.generator_loss(disc_generated_output,result[self.num_inputs],Y_image)
 			# losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
 			#Uncomment the two lines below to enable classification
@@ -156,7 +155,7 @@ class MultiTaskModel(Sequential):
 		grads_and_vars = zip(grads, self.trainableVariables)
 
 		grad_disc = tape.gradient(loss_disc,self.discriminator.trainable_variables)
-		grads_and_vars_disc = zip(grads_disc, self.discriminator.trainable_variables)
+		grads_and_vars_disc = zip(grad_disc, self.discriminator.trainable_variables)
 
 		optimizer.apply_gradients(grads_and_vars)
 		optimizer.apply_gradients(grads_and_vars_disc)
