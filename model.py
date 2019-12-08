@@ -130,7 +130,7 @@ class MultiTaskModel(Sequential):
 		return norms_rec,norms_pred
 
 	def save(self,modelDir):
-		for i in range(self.segnets):
+		for i in range(len(self.segnets)):
 			self.segnets[i].save("{}/Segnet-{}".format(modelDir,i))
 		pickle.dump(self.reconstruct_image.get_weights(),
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))

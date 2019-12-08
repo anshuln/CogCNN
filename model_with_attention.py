@@ -5,6 +5,7 @@ from layers import *
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization,Conv2D
 import numpy as np
+import pickle
 class MultiTaskModel(Sequential):
 	def __init__(self,image_shape,num_labels,num_inputs=4,trainableVariables=None):
 		#num_inputs refers to input channels(edge,texture etc.)
@@ -152,13 +153,13 @@ class MultiTaskModel(Sequential):
 		attention_maps_pred.append(attention)
 		for i in range(self.num_inputs-1):
 			enc,rec = self.segnets[i+1].call(X[i+1])
-			attention = self.attention_gates_rped[i+1].get_attention_map(encoded_reps).numpy()
+			attention = self.attention_gates_pred[i+1].get_attention_map(encoded_reps).numpy()
 			attention_maps_pred.append(attention)  #Appending the reconstructed result to return 
 
 		return np.array(attention_maps_rec),np.array(attention_maps_pred)
 
 	def save(self,modelDir):
-		for i in range(self.segnets):
+		for i in range(len(self.segnets)):
 			self.segnets[i].save("{}/Segnet-{}".format(modelDir,i))
 		pickle.dump(self.reconstruct_image.get_weights(),
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))

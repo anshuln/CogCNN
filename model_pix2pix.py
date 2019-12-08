@@ -4,13 +4,14 @@ from multitask_segnet_tf2 import *
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Flatten,Dense,Reshape,Dropout,BatchNormalization,Conv2D,ZeroPadding2D,LeakyReLU
 import numpy as np
+import pickle
 class PatchGanDiscriminator(tf.keras.Model):
 	def downsample(filters, size, apply_batchnorm=True):
 		initializer = tf.random_normal_initializer(0., 0.02)
 
 		result = tf.keras.Sequential()
 		result.add(Conv2D(filters, size, strides=2, padding='same',
-		                         kernel_initializer=initializer, use_bias=False))
+								 kernel_initializer=initializer, use_bias=False))
 
 		if apply_batchnorm:
 			result.add(tf.keras.layers.BatchNormalization())
@@ -24,9 +25,9 @@ class PatchGanDiscriminator(tf.keras.Model):
 		# self.down2 = self.downsample(128, 4) # (bs, 64, 64, 128)
 		self.down = self.downsample(256, 4) # (bs, 32, 32, 256)
 		self.conv1 = Conv2D(512, 4, strides=1,
-                                use_bias=False)
+								use_bias=False)
 		self.conv2 = Conv2D(1, 4, strides=1,
-                                use_bias=False)
+								use_bias=False)
 
 	def call(self,X_inp,X_gen):
 		X = tf.concat([X_inp,X_gen],axis=-1)
@@ -60,7 +61,8 @@ class MultiTaskModel(Sequential):
 		#Uncomment the two lines below to enable classification
 		self.predict_label = Sequential([Flatten(),Dense(1000),BatchNormalization(axis=-1),
 				Dense(num_labels,activation='softmax')])    #The loss function uses softmax, final preds as well
-		self.discriminator = Sequential([])
+		# self.discriminator = PatchGanDiscriminator()
+		# self.discriminator.compile()
 
 	def setTrainableVariables(self,trainableVariables=None):
 		if trainableVariables is not None:
@@ -142,8 +144,8 @@ class MultiTaskModel(Sequential):
 			for i in range(self.num_inputs-1):
 				loss += self.loss_reconstruction(X[i+1],result[i+1])
 				losses.append(self.loss_reconstruction(X[i+1],result[i+1]))
-			disc_real_output = self.discriminator(result[-1],Y_image)
-			disc_generated_output = self.discriminator(result[-1],result[self.num_inputs])
+			disc_real_output = self.discriminator.call(result[-1],Y_image)
+			disc_generated_output = self.discriminator.call(result[-1],result[self.num_inputs])
 			loss += self.generator_loss(disc_generated_output,result[self.num_inputs],Y_image)
 			# losses.append(self.loss_reconstruction(result[self.num_inputs],Y_image))
 			#Uncomment the two lines below to enable classification
@@ -178,7 +180,7 @@ class MultiTaskModel(Sequential):
 		loss += self.loss_classification(result[self.num_inputs+1],Y_labels)
 		losses.append(self.loss_classification(result[self.num_inputs+1],Y_labels))
 		# print(result[-1].shape,Y_labels.shape,tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1))
-		return (tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)).sum(),losses
+		return (np.array((tf.math.argmax(result[-1],axis=1).numpy()==np.argmax(Y_labels,axis=1)))*1.0).sum(),losses
 		# return losses
 		
 	def getWeightNorms(self):
@@ -197,7 +199,7 @@ class MultiTaskModel(Sequential):
 		return norms_rec,norms_pred
 
 	def save(self,modelDir):
-		for i in range(self.segnets):
+		for i in range(len(self.segnets)):
 			self.segnets[i].save("{}/Segnet-{}".format(modelDir,i))
 		pickle.dump(self.reconstruct_image.get_weights(),
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))
@@ -207,7 +209,7 @@ class MultiTaskModel(Sequential):
 			open("{}/Discriminator".format(modelDir),"wb"))
 
 	def load_model(self,modelDir):
-		for i in range(self.segnets):
+		for i in range(len(self.segnets)):
 			self.segnets[i].load_model("{}/Segnet-{}".format(modelDir,i))
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
 		pred_train_vars = pickle.load(open("{}/Prediction-Model".format(modelDir),"rb"))
