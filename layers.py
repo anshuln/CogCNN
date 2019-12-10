@@ -109,3 +109,21 @@ class SelfAttention(Layer):
 
     def get_attention_map(self,X):
         return self.model(X)
+
+class ReshapeAndConcat(Layer):
+    '''
+    Reshapes and concats two inputs
+    Needed for the discriminator
+    '''
+    def __init__(self):
+        super(ReshapeAndConcat, self).__init__(autocast=False)
+
+    def call(self,inputs):
+        X_inp,X_gen = inputs
+        bs,h,w,c = X_gen.shape
+        _,x1,x2,x3,x4 = X_inp.shape
+        #TODO ensure that shapes are compatible
+        #This is a very bad fix, atleast
+        # print(X_gen.dtype,X_inp.dtype)
+        X = tf.concat([tf.reshape(X_inp,(bs,h,w,(x1*x2*x3*x4)//(h*w))),tf.cast(X_gen,tf.float32)],axis=-1)
+        return X
