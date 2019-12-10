@@ -1,5 +1,5 @@
 #TODO refactor to get argparse for models and dataset
-from model_bits_and_pieces import MultiTaskModel
+from model import MultiTaskModel
 from tqdm import tqdm
 
 import tensorflow.python.util.deprecation as deprecation
