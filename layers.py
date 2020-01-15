@@ -103,13 +103,44 @@ class SelfAttention(Layer):
 		super(SelfAttention, self).__init__(autocast=False)
 		self.model = tf.keras.Sequential(layers)
 
+	@tf.function
 	def call(self,X):
 		attention_map = self.model(X)
-		return X*attention_map
+		return X*attention_map #,tf.math.reduce_mean(attention_map)
 
 	def get_attention_map(self,X):
 		return self.model(X)
 
+class CompleteAttention(Layer):
+	'''
+	Contrary to self attention, this looks at all streams and normalizes means
+	'''
+	def __init__(self,layers,num_streams):
+		super(CompleteAttention, self).__init__(autocast=False)
+		self.model = tf.keras.Sequential(layers)
+		self.num_streams = num_streams
+
+	def call(self,X):
+
+		attention_map,means,meansum = self.get_attention_map(X)
+
+		return X*attention_map,means,meansum
+
+	@tf.function
+	def get_attention_map(self,X):
+		attention_map = self.model(X)	
+		b,h,w,c 	  = attention_map.shape
+		means 		  = []
+		for i in range(self.num_streams):
+			means.append(tf.math.reduce_mean(attention_map[:,:,:,i*(c//self.num_streams):(i+1)*(c//self.num_streams)]))
+		
+		meansum = 0
+		for i in range(self.num_streams):
+			meansum += means[i]
+
+		# for i in range(self.num_streams):
+		# 	attention_map[:,:,:,i*(c//self.num_streams):(i+1)*(c//self.num_streams)] /= (meansum+1e-9)
+		return attention_map/(meansum+1e-9),means,meansum
 class ReshapeAndConcat(Layer):
 	'''
 	Reshapes and concats two inputs
@@ -127,4 +158,3 @@ class ReshapeAndConcat(Layer):
 		# print(X_gen.dtype,X_inp.dtype)
 		X = tf.concat([tf.reshape(X_inp,(bs,h,w,(x2*x3*x4)//(h*w))),tf.cast(X_gen,tf.float32)],axis=-1)
 		return X
-
