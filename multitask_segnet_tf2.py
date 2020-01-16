@@ -104,12 +104,14 @@ class SegNet(tf.keras.Sequential):
 	def load_model(self,fileName):
 		enc_train_vars = pickle.load(open("{}-enc".format(fileName),"rb"))
 		dec_train_vars = pickle.load(open("{}-dec".format(fileName),"rb"))
-		for l in self.encoder.layers:
-			# weights = l.get_weights()
-			weights = enc_train_vars
-			l.set_weights(weights)
-		for l in self.decoder.layers:
-			# weights = l.get_weights()
-			weights = dec_train_vars
-			l.set_weights(weights)
+		self.encoder.set_weights(enc_train_vars)
+		self.decoder.set_weights(dec_train_vars)
+		# for l in self.encoder.layers:
+		# 	# weights = l.get_weights()
+		# 	weights = enc_train_vars
+		# 	l.set_weights(weights)
+		# for l in self.decoder.layers:
+		# 	# weights = l.get_weights()
+		# 	weights = dec_train_vars
+		# 	l.set_weights(weights)
 		self.TrainableVarsSet = False

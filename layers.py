@@ -140,7 +140,7 @@ class CompleteAttention(Layer):
 
 		# for i in range(self.num_streams):
 		# 	attention_map[:,:,:,i*(c//self.num_streams):(i+1)*(c//self.num_streams)] /= (meansum+1e-9)
-		return attention_map/(meansum+1e-9),means,meansum
+		return attention_map,means,meansum
 class ReshapeAndConcat(Layer):
 	'''
 	Reshapes and concats two inputs

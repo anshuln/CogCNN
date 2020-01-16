@@ -363,8 +363,8 @@ class MultiTaskModel(Sequential):
 				enc,_      = self.segnets[i+1].call(X[i+1])
 				encoded_reps = tf.concat([encoded_reps,enc],axis=-1)
 			
-			attention_maps_rec  = self.attention_gates_rec(encoded_reps).numpy()
-			attention_maps_pred = self.attention_gates_pred(encoded_reps).numpy()
+			attention_maps_rec  = self.attention_gates_rec(encoded_reps)[0].numpy()
+			attention_maps_pred = self.attention_gates_pred(encoded_reps)[0].numpy()
 		result = tf.math.argmax(self.predict_label(tf.concat(attention_maps_pred,axis=-1)),axis=1)
 
 		return np.array(attention_maps_rec),np.array(attention_maps_pred),result.numpy()
@@ -380,9 +380,9 @@ class MultiTaskModel(Sequential):
 					open("{}/Attention-Rec-{}".format(modelDir,i),"wb"))
 		elif self.attention == 'multi':
 			pickle.dump(self.attention_gates_pred.get_weights(),
-				open("{}/Attention-Pred-{}".format(modelDir,i),"wb"))
+				open("{}/Attention-Pred".format(modelDir,i),"wb"))
 			pickle.dump(self.attention_gates_rec.get_weights(),
-				open("{}/Attention-Rec-{}".format(modelDir,i),"wb"))
+				open("{}/Attention-Rec".format(modelDir,i),"wb"))
 
 		pickle.dump(self.reconstruct_image.get_weights(),
 			open("{}/Reconstruction-Model".format(modelDir),"wb"))
@@ -390,15 +390,27 @@ class MultiTaskModel(Sequential):
 			open("{}/Prediction-Model".format(modelDir),"wb"))
 
 
-	def load_model(self,modelDir):
-		for i in range(self.segnets):
+	def load_model(self,modelDir,attention,two_stage,pix2pix):
+		for i in range(len(self.segnets)):
 			self.segnets[i].load_model("{}/Segnet-{}".format(modelDir,i))
 		rec_train_vars = pickle.load(open("{}/Reconstruction-Model".format(modelDir),"rb"))
 		pred_train_vars = pickle.load(open("{}/Prediction-Model".format(modelDir),"rb"))
-		for l in self.reconstruct_image.layers:
-			weights = rec_train_vars
-			l.set_weights(weights)
-		for l in self.predict_label.layers:
-			weights = pred_train_vars
-			l.set_weights(weights)
+		# for l in self.reconstruct_image.layers:
+		# 	weights = rec_train_vars
+		self.reconstruct_image.set_weights(rec_train_vars)
+		# for l in self.predict_label.layers:
+		# 	weights = pred_train_vars
+		self.predict_label.set_weights(pred_train_vars)
 		self.TrainableVarsSet = False
+		self.pix2pix   = pix2pix
+		self.attention = attention
+		self.two_stage = two_stage
+
+		if self.attention == "multi":
+			pred_gates = pickle.load(open("{}/Attention-Pred".format(modelDir),"rb"))
+			rec_gates = pickle.load(open("{}/Attention-Rec".format(modelDir),"rb"))
+			self.attention_gates_pred.set_weights(pred_gates)
+			self.attention_gates_rec.set_weights(rec_gates)
+		elif self.attention == 'self':
+			raise NotImplementedError
+
