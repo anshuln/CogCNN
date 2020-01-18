@@ -1,5 +1,5 @@
 #TODO refactor to get argparse for models and dataset
-from model_bits_and_pieces import MultiTaskModel
+from model import MultiTaskModel
 from tqdm import tqdm
 
 # import tensorflow.python.util.deprecation as deprecation
@@ -75,10 +75,10 @@ def train(model,optimizer,epochs,two_stage=False):  #TODO add validation, genera
 			if epoch>=max_epochs_rec:
 				classification = True
 			l,l_all = model.train_on_batch(input_batch,label_im_batch,label_batch,optimizer,classification=classification)
-			# print(l_all)
+# 			print(l.numpy())
 			tloss.append([l.numpy() for l in l_all])
 
-		log_aten = open('AttentionMaps/log_aten.txt','a')
+		log_aten = open('log_aten.txt','a')
 		log_aten.write("Epoch - {}".format(epoch))
 		log_aten.write("\n-------------------\n")
 		log_aten.close()
@@ -117,7 +117,7 @@ def train(model,optimizer,epochs,two_stage=False):  #TODO add validation, genera
 					if model.attention == 'self':
 						fig, ax = plt.subplots(3, 5)
 						# print(aten_rec.shape)
-						log_aten = open('AttentionMaps/log_aten.txt','a')
+						log_aten = open('log_aten.txt','a')
 						log_aten.write("Reconstruction - ")
 						for i in range(4):
 							ax[0,i].imshow(aten_rec[i,0].mean(axis=0).reshape((32,32)))
@@ -133,35 +133,32 @@ def train(model,optimizer,epochs,two_stage=False):  #TODO add validation, genera
 						ax[0,4].imshow(label_im_batch[sample])
 						ax[1,4].imshow(res[4][0])
 						ax[2,4].text(30,30,prediction)
-						plt.savefig("AttentionMaps/{}-{}.png".format(epoch,f))
+						plt.savefig("{}-{}.png".format(epoch,f))
 						plt.close()
 					elif model.attention == 'multi':
-						fig, ax = plt.subplots(2,4)
+						fig, ax = plt.subplots(2)
 						# print(aten_rec.shape)
 						# log_aten = open('AttentionMaps/log_aten.txt','a')
 						# log_aten.write("Reconstruction - ")
 						# for i in range(2):
-						ax[0,0].imshow(aten_rec[:,:,:,:512].reshape((64,32)))
-						ax[0,1].imshow(aten_rec[:,:,:,512:1024].reshape((64,32)))
-						ax[0,2].imshow(aten_rec[:,:,:,1024:1536].reshape((64,32)))
-						ax[0,3].imshow(aten_rec[:,:,:,1536:2048].reshape((64,32)))
+						ax[0].imshow(aten_rec.reshape((256,32)))
 							# log_aten.write("{} ".format(aten_rec[i,0].mean()))
 						# log_aten.write("\nPrediction - ")
 						# for i in range(4):
-						ax[1,0].imshow(aten_pred[:,:,:,:512].reshape((64,32)))
-						ax[1,1].imshow(aten_pred[:,:,:,512:1024].reshape((64,32)))
-						ax[1,2].imshow(aten_pred[:,:,:,1024:1536].reshape((64,32)))
-						ax[1,3].imshow(aten_pred[:,:,:,1536:2048].reshape((64,32)))
+						ax[1].imshow(aten_pred.reshape((256,32)))
 							# log_aten.write("{} ".format(aten_pred[i,0].mean()))
 							# ax[2,i].imshow(res[i][0])
 						# log_aten.write("\n Label given - {}".format(prediction))
 						# log_aten.write("\n==\n")
 						# log_aten.close()
-						# ax[0,1].imshow(label_im_batch[sample])
-						# ax[1,1].imshow(res[4][0])
 						# ax[2,4].text(30,30,prediction)
-						plt.savefig("AttentionMaps/{}-{}.png".format(epoch,f))
+						plt.savefig("{}-{}.png".format(epoch,f))
 						plt.close()
+					fig, ax = plt.subplots(2)
+					ax[0].imshow(label_im_batch[sample])
+					ax[1].imshow(res[4][0])
+					plt.savefig("{}-{}-rec.png".format(epoch,f))
+					plt.close()
 
 
 				except:
