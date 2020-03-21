@@ -1,0 +1,42 @@
+In file model.py 
+---------- 
+Line 1: General TODO 
+  Rename file 
+Line 15:     (in function __init__) 
+  - kwargs support for segnet initializations 
+Line 32:     (in function __init__) 
+  make better attention layers. 
+Line 41:     (in function __init__) 
+  fix the reconstruction net to have some conv layers 
+Line 138:    (in function call) 
+  check if this gives us correct appending upon flatten 
+Line 139:    (in function call) 
+  refactor to make everything a tensor 
+Line 226:    (in function discriminator_loss) 
+  make this tf.function 
+Line 242:    (in function train_on_batch) 
+  FIX THIS, since result[-1] is not the required thing anymore 
+Line 275:   loss += self.regularizer_naive(result[-2],result[-1],indx=0) (in function train_on_batch) 
+  Have this tunable 
+ 
+==========
+In file multitask_segnet_tf2.py 
+---------- 
+Line 31:    for i in range(4): (in function __init__) 
+  Refactor for better model making 
+ 
+==========
+In file train.py 
+---------- 
+Line 1: General TODO 
+  refactor to get argparse for models and dataset 
+Line 52:    def train(model,optimizer,epochs,two_stage=False): (in function train) 
+  add validation, generator for datasets 
+ 
+==========
+In file layers.py 
+---------- 
+Line 156:    (in function call) 
+  ensure that shapes are compatible 
+ 
+==========

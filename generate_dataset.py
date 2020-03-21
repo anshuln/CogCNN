@@ -97,5 +97,30 @@ def generate_npy_files(train_file_dir_list=['amazon_silhouette','amazon_texture/
     #               idx_h5 = idx_h5 + 1
 
 
-generate_npy_files()
+# generate_npy_files()
 
+
+def process_path(file_path):
+    paths = {'fruit_texture':'t','fruit_shape':'s','fruit_edge':'e','fruit_greyscale':'g'}  
+    paths_to_read = []
+    curr_path = file_path.split('/')
+    for p in paths.keys():
+        path = [x for x in curr_path]
+        path[-1] = paths[p]+path[-1][1:]
+        path[5] = p
+        paths_to_read.append('/'.join(path))
+    label_path = [x for x in curr_path]
+    label_path[-1] = 'm' + label_path[-1][1:]
+    label_path[5] = 'fruit_main'
+
+    # load the raw data from the file as a string
+    vect = tf.io.read_file(paths_to_read[0])
+    vect = decode_img(vect)
+    vect = tf.expand_dims(vect,0)
+    for path in paths_to_read[1:]:
+        img = tf.io.read_file(path)
+        img = decode_img(img)
+        vect = tf.concat([vect,tf.expand_dims(img,0)],0)
+    label = tf.io.read_file(label_path)
+    label = decode_img(label_path)
+    return vect, label
