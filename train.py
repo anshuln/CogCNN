@@ -1,236 +1,131 @@
-#TODO refactor to get argparse for models and dataset
-from model import MultiTaskModel
-from tqdm import tqdm
+import torch 
 
-# import tensorflow.python.util.deprecation as deprecation
-# deprecation._PRINT_DEPRECATION_WARNINGS = False
+from model_ import MultiTaskModel
+from skimage import io
 
-import tensorflow as tf
-import numpy as np
-
-import pickle
-import os
-import sys
-import argparse
-
-from matplotlib import pyplot as plt
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1' 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-physical_devices = tf.config.experimental.list_physical_devices('GPU')
-for d in physical_devices:
-    tf.config.experimental.set_memory_growth(d, True)
-#tf.config.experimental.set_memory_growth(physical_devices[1], True)
-train_dir = 'data/'
-label_im_dir = 'label/images'
-label_dir = 'label/labels'
-log_file = 'log.txt'
-
-num_inputs = 4
-image_shape = (64,64,3)
-num_labels = 31
-
-sys.setrecursionlimit(10**6)
-
-def generate_class_wise_metric(model,train_files):
-    metrics_rec  = np.zeros((num_labels,num_inputs))
-    metrics_pred = np.zeros((num_labels,num_inputs))
-    counts = np.zeros((num_labels,1))
-    for f in (train_files):
-        input_batch = np.load("{}/{}".format(train_dir,f),allow_pickle=True)
-        label_batch = np.load("{}/{}".format(label_dir,f),allow_pickle=True)
-        for i in range(input_batch.shape[1]):
-            label = tf.math.argmax(label_batch[i],axis=0)
-            aten_rec,aten_pred,prediction = model.getAttentionMap(input_batch[:,i:i+1])
-            # print(aten_rec[:,0].shape)
-            metrics_rec[label] += aten_rec[:,0].mean(axis=(1,2,3))
-            metrics_pred[label]+= aten_pred[:,0].mean(axis=(1,2,3))
-            counts[label] += 1
-    print(metrics_rec/counts)
-    print(metrics_pred/counts)
-
-def train(model,optimizer,epochs,two_stage=False):  #TODO add validation, generator for datasets
-    train_files = []
-    val_files = []
-    for file in os.listdir(train_dir):
-        if file.endswith(".npy"):   #Change to h5 later
-            train_files.append(file)
-    for file in os.listdir(train_dir):
-        if file.endswith("v.npy"):   #Change to h5 later
-            val_files.append(file)
-    train_files = [x for x in train_files if x not in val_files]
-    max_epochs_rec = epochs
-    epochs = 2*epochs if two_stage else epochs
-    for epoch in range(epochs):
-        print("Epoch num {}".format(epoch))
-        tloss = []
-        vloss = []
-        v_acc = 0
-
-        for f in tqdm(train_files):
-            input_batch = np.load("{}/{}".format(train_dir,f),allow_pickle=True)
-            label_batch = np.load("{}/{}".format(label_dir,f),allow_pickle=True)
-            label_im_batch = np.load("{}/{}".format(label_im_dir,f),allow_pickle=True)
-            classification = False
-            if epoch>=max_epochs_rec:
-                classification = True
-            l,l_all = model.train_on_batch(input_batch,label_im_batch,label_batch,optimizer,classification=classification)
-#           print(l.numpy())
-            tloss.append([l.numpy() for l in l_all])
-
-        log_aten = open('log_aten.txt','a')
-        log_aten.write("Epoch - {}".format(epoch))
-        log_aten.write("\n-------------------\n")
-        log_aten.close()
-        for f in val_files:
-            input_batch = np.load("{}/{}".format(train_dir,f),allow_pickle=True)
-            label_batch = np.load("{}/{}".format(label_dir,f),allow_pickle=True)
-            label_im_batch = np.load("{}/{}".format(label_im_dir,f),allow_pickle=True)
-            l,l_all = model.validate_batch(input_batch,label_im_batch,label_batch)
-            v_acc += l 
-            sample = np.random.randint(15)
-            check = input_batch[:,sample:sample+1]
-            res = model.call(check)
-            # print("Edges",np.max(res[3][0].numpy()),np.min(res[3][0].numpy()))
-            # print("Silhuette",np.max(res[0][0].numpy()),np.min(res[0][0].numpy()))
-            # print("Greyscale",np.max(res[2][0].numpy()),np.min(res[2][0].numpy()))
-            vloss.append([l.numpy() for l in l_all])
-            # print(l_all[-1].numpy().shape)
-            if epoch % 5 == 0:
-                # fig, ax = plt.subplots(3, 3)
-                # try:
-                #   ax[0,0].imshow(res[0][0])
-                #   ax[1,0].imshow(res[1][0])
-                #   ax[2,0].imshow(res[2][0])
-                #   ax[0,1].imshow(res[3][0])
-                #   ax[1,1].imshow(res[4][0])
-                #   ax[2,1].imshow(label_im_batch[sample])
-                #   ax[2,2].imshow(input_batch[:,sample][0])
-                #   ax[0,2].imshow(input_batch[:,sample][1])
-                #   ax[1,2].imshow(input_batch[:,sample][2])
-                #   plt.savefig("Reconstructed_Results/{}-{}.png".format(epoch,f))
-                #   plt.close()
-                # except:
-                #   pass    
-                try:
-                    aten_rec,aten_pred,prediction = model.getAttentionMap(check)
-                    if model.attention == 'self':
-                        fig, ax = plt.subplots(3, 5)
-                        # print(aten_rec.shape)
-                        log_aten = open('log_aten.txt','a')
-                        log_aten.write("Reconstruction - ")
-                        for i in range(4):
-                            ax[0,i].imshow(aten_rec[i,0].mean(axis=0).reshape((32,32)))
-                            log_aten.write("{} ".format(aten_rec[i,0].mean()))
-                        log_aten.write("\nPrediction - ")
-                        for i in range(4):
-                            ax[1,i].imshow(aten_pred[i,0].mean(axis=0).reshape((32,32)))
-                            log_aten.write("{} ".format(aten_pred[i,0].mean()))
-                            ax[2,i].imshow(res[i][0])
-                        log_aten.write("\n Label given - {}".format(prediction))
-                        log_aten.write("\n==\n")
-                        log_aten.close()
-                        ax[0,4].imshow(label_im_batch[sample])
-                        ax[1,4].imshow(res[4][0])
-                        ax[2,4].text(30,30,prediction)
-                        plt.savefig("{}-{}.png".format(epoch,f))
-                        plt.close()
-                    elif model.attention == 'multi':
-                        fig, ax = plt.subplots(2)
-                        # print(aten_rec.shape)
-                        # log_aten = open('AttentionMaps/log_aten.txt','a')
-                        # log_aten.write("Reconstruction - ")
-                        # for i in range(2):
-                        ax[0].imshow(aten_rec.reshape((256,32)))
-                            # log_aten.write("{} ".format(aten_rec[i,0].mean()))
-                        # log_aten.write("\nPrediction - ")
-                        # for i in range(4):
-                        ax[1].imshow(aten_pred.reshape((256,32)))
-                            # log_aten.write("{} ".format(aten_pred[i,0].mean()))
-                            # ax[2,i].imshow(res[i][0])
-                        # log_aten.write("\n Label given - {}".format(prediction))
-                        # log_aten.write("\n==\n")
-                        # log_aten.close()
-                        # ax[2,4].text(30,30,prediction)
-                        plt.savefig("{}-{}.png".format(epoch,f))
-                        plt.close()
-                    fig, ax = plt.subplots(2)
-                    ax[0].imshow(label_im_batch[sample])
-                    ax[1].imshow(res[4][0])
-                    plt.savefig("{}-{}-rec.png".format(epoch,f))
-                    plt.close()
-
-
-                except:
-                    assert False
-                    pass        
-        log = open(log_file,"a")
-        print(np.array(vloss).shape)
-        log.write("Epoch - {} Training_Loss - {} validation_loss - {},val_acc - {}".format(epoch,np.array(tloss).mean(axis=0),np.array(vloss).mean(axis=0),v_acc/(len(val_files)*16)))
-        log.write("\n")
-        log.close()
-        print("Val-loss {}".format(np.array(vloss).mean(axis=0)[-1]))
-        if epoch % 5 == 0:
-            model.save('trained_models')
-    # generate_class_wise_metric(model,train_files)
-
-
-if __name__ == "__main__":
-    TF_CPP_MIN_LOG_LEVEL = 4
-    parser = argparse.ArgumentParser()
-
-    #-db DATABSE -u USERNAME -p PASSWORD -size 20
-    parser.add_argument("-a","--attention", help="Using attention or not",choices=['self','multi'],default=None)
-    parser.add_argument("-p","--pix2pix", help="Using pix2pix",action="store_true")
-    parser.add_argument("-t","--twostage", help="Using two stage",action="store_true")
-    parser.add_argument("-s","--small", help="Small dataset",action="store_true")
-    parser.add_argument("-e","--epochs",help="Num of epochs",type=int, default=50)
-
-    args = parser.parse_args()
-
-    # if(len(sys.argv)==2):
-    #   trainableVariablesFile = sys.argv[1]
-    #   trainableVariables = pickle.load(open(trainableVariablesFile,'rb'))
-    #   model = MultiTaskModel(num_inputs=num_inputs,image_shape=image_shape,num_labels=num_labels,trainableVariables=trainableVariables)
-    # else:
-    #   model = MultiTaskModel(num_inputs=num_inputs,image_shape=image_shape,num_labels=num_labels)
-
-    if args.small:
-        train_dir = 'data_small/'
-        label_im_dir = 'label_small/images'
-        label_dir = 'label_small/labels'
-    model = MultiTaskModel(num_inputs=num_inputs,image_shape=image_shape,num_labels=num_labels,attention=args.attention,pix2pix=args.pix2pix,two_stage=args.twostage)
-    
-    d1 = np.load("{}/0v.npy".format(train_dir),allow_pickle=True)
-    print(d1[:,:1].shape)
-    print("Building Model...")
-    model.build(d1[:,:1])
-    
-    # fig, ax = plt.subplots(3, 3)
-    # # print(res[0][0])
-    # # try:
-    # ax[0,0].imshow(res[0][0])
-    # ax[1,0].imshow(res[1][0])
-    # ax[2,0].imshow(res[2][0])
-    # ax[0,1].imshow(res[3][0])
-    # ax[1,1].imshow(res[4][0])
-    # # ax[2,1].imshow(label_im_batch[sample])
-    # ax[2,2].imshow(d1[:,0][0])
-    # ax[0,2].imshow(d1[:,0][1])
-    # ax[1,2].imshow(d1[:,0][2])
-    # plt.savefig("Reconstructed_Results/Init.png")
-    # plt.close()
-    # for x in res:
-    #   print("Shape",x.shape)  
-    print("Model built")
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
-    model.setTrainableVariables()
-    log = open(log_file,'w')
-    log.close()
-    log = open('AttentionMaps/log_aten.txt','w')
-    log.close()
-    train(model,optimizer,args.epochs,args.twostage)
-    # pred = model.call(d1)
+num_classes = 31
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = MultiTaskModel(num_classes).to(device)
 
 
 
+
+
+num_classes = 31
+image_shape = (3,64,64)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = MultiTaskModel(image_shape,num_classes).to(device)
+
+model.cuda()
+num_epochs = 5
+
+
+
+class TrainingDataset(torch.utils.data.Dataset):
+
+	def __init__(self,list_of_paths,stream_dict):
+		"""
+		Args:
+			text_file(string): path to text file
+			root_dir(string): directory with all train images
+		"""
+		self.file_paths = list_of_paths
+		self.stream_dict = stream_dict
+
+	def __len__(self):
+		return len(self.file_paths)
+
+	def __getitem__(self, idx):
+		file_path = self.file_paths[idx]
+		paths_to_read = []
+		curr_path = file_path.split('/')
+		for p in self.stream_dict.keys():
+			path = [x for x in curr_path]
+			path[-1] = self.stream_dict[p]+curr_path[-1][1:]
+			path[5] = p
+			paths_to_read.append('/'.join(path))
+		label_path = [x for x in curr_path]
+		label_path[-1] = 'm' + label_path[-1][1:]
+		label_path[5] = 'fruit_main'
+		label_path = '/'.join(label_path)
+		
+		vect = cv2.resize(cv2.imread(paths_to_read[0]),(64,64))/255.0
+		vect = np.expand_dims(np.moveaxis(vect,2,0),0)
+		for path in paths_to_read[1:]:
+			img = cv2.resize(cv2.imread(path),(64,64))/255.0
+			if len(img.shape) == 3:
+				img = np.expand_dims(np.moveaxis(img,2,0),axis=0)
+			else:
+				img = np.expand_dims(np.expand_dims(img,axis=0),axis=1)
+#             print(img.shape)
+			vect = np.concatenate([vect,img],0)
+		label_img = cv2.resize(cv2.imread(label_path),(64,64))/255.0
+		label_img = np.moveaxis(label_img,2,0)
+		label = np.array(one_hot(labels.index(curr_path[7]),len(labels)))    #convert to one hot
+		sample = {'image': torch.tensor(vect,dtype=torch.float32), 'label_img': torch.tensor(label_img,dtype=torch.float32),'label':torch.tensor(label)}
+		return sample
+# mnistmTrainSet = mnistmTrainingDataset(text_file ='Downloads/mnist_m/mnist_m_train_labels.txt',
+#                                    root_dir = 'Downloads/mnist_m/mnist_m_train')
+
+# mnistmTrainLoader = torch.utils.data.DataLoader(mnistmTrainSet,batch_size=16,shuffle=True, num_workers=2)
+
+# Loss and optimizer
+transformed_dataset = TrainingDataset(glob.glob('/kaggle/input/fruitsmulti/fruit/*/Training/*/*'),
+							   {'fruit_texture':'t','fruit_shape':'s','fruit_edge':'e','fruit_gray':'g'})
+
+train_loader = torch.utils.data.DataLoader(transformed_dataset, batch_size=16,
+						shuffle=True, num_workers=4)
+criterion_pred = nn.CrossEntropyLoss()
+criterion_rec  = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+# Train the model
+total_step = len(train_loader)
+for epoch in range(num_epochs):
+	for i, sample in enumerate(train_loader):
+		images = sample["image"].to(device)
+		labels = sample["label"].to(device)
+		rec    = sample["label_img"].to(device)
+
+		# Forward pass
+		outputs = model(images)
+#         print(outputs[1].size(),outputs[0].size(),rec.size(),images.size())
+		loss = criterion_rec(outputs[1], rec) + criterion_rec(outputs[0],images)
+		
+		# Backward and optimize
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+		
+		if (i+1) % 100 == 0:
+			print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
+				   .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
+
+#TODO put all this in a function
+for i in range(num_inputs):
+	model.segnets[i].set_train_false()  #TODO write this function
+model.attention_gates_rec.set_train_false()
+
+for p in model.reconstruct_image.parameters():
+	p.requires_grads = False
+
+
+for epoch in range(num_epochs):
+	for i, (images, rec, labels) in enumerate(train_loader):
+		images = images.to(device)
+		labels = labels.to(device)
+		rec    = rec.to(device)
+
+		# Forward pass
+		outputs = model(images)
+
+		loss = criterion_pred(nn.Softmax(outputs[2]),labels)  #+ Add regularizer   
+		
+		# Backward and optimize
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+		
+		if (i+1) % 100 == 0:
+			print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
+				   .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
