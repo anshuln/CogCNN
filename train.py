@@ -150,23 +150,25 @@ for epoch in range(num_epochs):
 
 
 # with torch.no_grad():
+metrics_rec  = np.zeros((num_classes,num_inputs))
+metrics_pred = np.zeros((num_classes,num_inputs))
+counts = np.zeros((num_classes,1))+1e-9
 for j,sample in enumerate(train_loader):
-	images = sample["image"].to(device)
-	labels = sample["label"].to(device)
-	rec    = sample["label_img"].to(device)
-	print(images.size())
-	print(model.get_attention_stats(images))
+    images = sample["image"].to(device)
+    labels = sample["label"].to(device)
+    rec    = sample["label_img"].to(device)
+#     print(images.size())
+#     print(model.get_attention_stats(images))
 #     break
-	metrics_rec  = np.zeros((num_classes,num_inputs))
-	metrics_pred = np.zeros((num_classes,num_inputs))
-	counts = np.zeros((num_classes,1))+1e-9
 #   for f in (train_files):
-	for i in range(images.size()[0]):
-		label = labels[i]
-		mr,mp,msr,msp = model.get_attention_stats(images[i:i+1])
-		# print(aten_rec[:,0].shape)
-		metrics_rec[label] += np.array([x.detach().cpu().numpy() for x in mr])/msr.detach().cpu().numpy()
-		metrics_pred[label]+= np.array([x.detach().cpu().numpy() for x in mp])/msr.detach().cpu().numpy()
-		counts[label] += 1
-	print(metrics_rec/counts)
-	print(metrics_pred/counts)
+    for i in range(images.size()[0]):
+        label = labels[i]
+        mr,mp,msr,msp = model.get_attention_stats(images[i:i+1])
+        # print(aten_rec[:,0].shape)
+        metrics_rec[label] += np.array([x.detach().cpu().numpy() for x in mr])/msr.detach().cpu().numpy()
+        metrics_pred[label]+= np.array([x.detach().cpu().numpy() for x in mp])/msp.detach().cpu().numpy()
+        counts[label] += 1
+#         break
+#     break
+print(metrics_rec/counts)
+print(metrics_pred/counts)
