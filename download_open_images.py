@@ -45,11 +45,17 @@ def segment_images(img_df,train_dir,train_segmentation_dir):
 		try:
 			impath = '{}/{}/{}.jpg'.format(train_dir,img_df['LabelName'][ind].replace('/','#'),img_df['ImageID'][ind])  #All images are jpg
 			seg_path = "{}/{}".format(train_segmentation_dir,img_df['MaskPath'][ind])
-			image = cv2.imread(impath)/255.0
-			segmask = cv2.imread(seg_path)/255.0
+			image = cv2.imread(impath)#/255.0
+			if image is None:
+				print("File doesn't exist")	
+				continue
+			image = image/255.0
+			imshape = (image.shape[1],image.shape[0])
+			segmask = cv2.resize(cv2.imread(seg_path),imshape)/255.0
 			image = image*segmask
 			impath  = '{}/{}/{}$segmented.jpg'.format(train_dir,img_df['LabelName'][ind].replace('/','#'),img_df['ImageID'][ind])
-			cv2.imwrite(image,impath)
+			cv2.imwrite(impath,image*255.0)
+			print("Wrote file into {}".format(impath))
 		except FileNotFoundError:
 			print("File doesn't exist")	
 
