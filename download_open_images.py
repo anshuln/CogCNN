@@ -24,22 +24,33 @@ def generate_pandas(names,seg_file,im_file,label_file):
 def download_images(img_df,train_dir,counter=10000000000):
     #Step 1 - create folders having labels
     labels = set(img_df['LabelName'].tolist())
+    label_counts = dict([(x,0) for x in labels])
     for l in labels:
         os.makedirs('{}/{}'.format(train_dir,l.replace('/','#')),exist_ok=True)
 
     #Step 2 - download images
     index = 0
     for ind in img_df.index: 
-        if index > counter:
+        lab = True
+        for l in labels_counts.keys():
+            lab = lab & (labels_counts[l]>counter)
+        if lab:
             break
         # if ind<50:
         try:
             url  = img_df['OriginalURL'][ind]
             path = '{}/{}/{}.jpg'.format(train_dir,img_df['LabelName'][ind].replace('/','#'),img_df['ImageID'][ind])  #All images are jpg
             urllib.request.urlretrieve(url,path)
-            index += 1
+            label_counts[img_df['LabelName']] += 1
         except:
             print("HTTP Error URL doesn't exist")
+def bbox(img):
+    rows = np.any(img, axis=1)
+    cols = np.any(img, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    return rmin, rmax, cmin, cmax
 
 def segment_images(img_df,train_dir,train_segmentation_dir):
     for ind in img_df.index: 
@@ -55,6 +66,8 @@ def segment_images(img_df,train_dir,train_segmentation_dir):
             imshape = (image.shape[1],image.shape[0])
             segmask = cv2.resize(cv2.imread(seg_path),imshape)/255.0
             image = image*segmask
+            rmin,rmax,cmin,cmax = bbox(image)
+            image = image[rmin:rmax,cmin:cmax,:]
             impath  = '{}/{}/{}$segmented.jpg'.format(train_dir,img_df['LabelName'][ind].replace('/','#'),img_df['ImageID'][ind])
             cv2.imwrite(impath,(image)*255.0)
             print("Wrote file into {}".format(impath))
