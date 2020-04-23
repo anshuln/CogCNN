@@ -4,12 +4,13 @@ import urllib
 from tqdm import tqdm
 import os
 import cv2
-train_segmentation_dir = 'test-masks-0' 
+import numpy as np
+train_segmentation_dir = 'train-masks-3' 
 
-train_dir = 'test-images'
+train_dir = 'train_images'
 
-seg_file_csv = 'test-annotations-object-segmentation.csv'
-im_file_csv  = 'test-images-with-rotation.csv'
+seg_file_csv = 'train-annotations-object-segmentation.csv'
+im_file_csv  = 'train-images-boxable-with-rotation.csv'
 lab_file_csv = 'labels.csv'
 
 def generate_pandas(names,seg_file,im_file,label_file):
@@ -24,24 +25,26 @@ def generate_pandas(names,seg_file,im_file,label_file):
 def download_images(img_df,train_dir,counter=10000000000):
     #Step 1 - create folders having labels
     labels = set(img_df['LabelName'].tolist())
-    label_counts = dict([(x,0) for x in labels])
+    labels_counts = dict([(x,0) for x in labels])
     for l in labels:
         os.makedirs('{}/{}'.format(train_dir,l.replace('/','#')),exist_ok=True)
 
     #Step 2 - download images
     index = 0
-    for ind in img_df.index: 
+    for ind in tqdm(img_df.index): 
         lab = True
         for l in labels_counts.keys():
             lab = lab & (labels_counts[l]>counter)
         if lab:
             break
+        if labels_counts[img_df['LabelName'][ind]] > counter:
+            continue
         # if ind<50:
         try:
             url  = img_df['OriginalURL'][ind]
             path = '{}/{}/{}.jpg'.format(train_dir,img_df['LabelName'][ind].replace('/','#'),img_df['ImageID'][ind])  #All images are jpg
             urllib.request.urlretrieve(url,path)
-            label_counts[img_df['LabelName']] += 1
+            labels_counts[img_df['LabelName'][ind]] += 1
         except:
             print("HTTP Error URL doesn't exist")
 def bbox(img):
@@ -81,6 +84,6 @@ if __name__ == "__main__":
 
     img_df = generate_pandas(mask_paths,seg_file_csv,im_file_csv,lab_file_csv)
     print("_______DOWNLOADING IMAGES____________")
-    download_images(img_df,train_dir,100)
+    download_images(img_df,train_dir,5)
     print("__________DOWLOAD COMPLETE___________")
     segment_images(img_df,train_dir,train_segmentation_dir)
